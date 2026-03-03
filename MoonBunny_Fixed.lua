@@ -8,11 +8,37 @@ local _HttpService = game:GetService("HttpService")
 local _Players = game:GetService("Players")
 local _player = _Players.LocalPlayer
 
-local KEY_SAVE_FILE = "moonbunny_key.txt"
+local keyURL = (getgenv and getgenv().MOONBUNNY_KEY_URL)
+    or "https://raw.githubusercontent.com/MoonBunny-art/meine-keys/main/Keys.txt"
 
--- ═══════════════════════════════════════
--- DELTA-KOMPATIBLER FILE I/O WRAPPER
--- ═══════════════════════════════════════
+local _result = (getgenv and getgenv().MOONBUNNY_KEY_RESULT)
+
+if not _result then
+    local ok, res = pcall(function() return game:HttpGet(keyURL) end)
+    if not ok then error("❌ Konnte Keys nicht laden!") end
+    _result = res
+
+    if _player.UserId ~= 3664472992 then
+        if _result:find("DEACTIVATED") or _result:find("DEAKTIVIERT") then
+            _player:Kick("This script may have been disabled by its owner!")
+            return
+        end
+    end
+end
+
+if getgenv then
+    getgenv().MOONBUNNY_KEY_RESULT = nil
+    getgenv().MOONBUNNY_KEY_URL    = nil
+end
+
+local validKeys = {}
+for key in _result:gmatch("[^\n]+") do
+    validKeys[key:gsub("%s+", "")] = true
+end
+
+local KEY_SAVE_FILE = "moonbunny_key.txt"
+local ADMIN_ID = 3664472992
+
 local function safeWritefile(path, content)
     pcall(function()
         if writefile then writefile(path, content) end
@@ -53,7 +79,34 @@ local selfKick = false
 
 local function startMainScript()
 
-
+local savedKeyForCheck = loadSavedKey()
+task.spawn(function()
+    while task.wait(1) do
+        local ok, freshResult = pcall(function()
+            return game:HttpGet(keyURL)
+        end)
+        if ok then
+            if _player.UserId ~= 3664472992 then
+                if freshResult:find("DEACTIVATED") or freshResult:find("DEAKTIVIERT") then
+                    safeWritefile(KEY_SAVE_FILE, "")
+                    selfKick = true
+                    _player:Kick("Script wurde deaktiviert!")
+                    break
+                end
+                local freshKeys = {}
+                for k in freshResult:gmatch("[^\n]+") do
+                    freshKeys[k:gsub("%s+", "")] = true
+                end
+                if not freshKeys[savedKeyForCheck] then
+                    safeWritefile(KEY_SAVE_FILE, "")
+                    selfKick = true
+                    _player:Kick("Dein Key wurde entfernt!")
+                    break
+                end
+            end
+        end
+    end
+end)
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -170,7 +223,7 @@ RunService.Heartbeat:Connect(function(dt)
                and gui.Name ~= "ExploitGui" and gui.Name ~= "FlyGui"
                and gui.Name ~= "LeaveGui"
                and gui.Name ~= "TracerGui"  and gui.Name ~= "SpeedGui"
-               and gui.Name ~= "AIChatGui" then
+               and gui.Name ~= "AIChatGui" and gui.Name ~= "CrashGui" then
                 if containsPausedText(gui) then doReset(); return end
             end
         end
@@ -1074,58 +1127,48 @@ espGui.Parent = player:WaitForChild("PlayerGui")
 
 local espConn
 local function enableESP()
-    -- Alles löschen und neu aufbauen alle 0.4 Sekunden
-    espConn = task.spawn(function()
-        while espConn ~= false do
-            -- Alle alten ESP Objekte löschen
-            for _, obj in pairs(espGui:GetChildren()) do
-                obj:Destroy()
-            end
-            -- Alle Spieler neu rendern
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= player and p.Character then
-                    local char = p.Character
-                    -- Nur rendern wenn HumanoidRootPart noch da ist (nicht geleaved)
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if not root then continue end
-                    -- SelectionBoxen für alle Parts
-                    for _, part in pairs(char:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            local sel = Instance.new("SelectionBox")
-                            sel.Adornee = part
-                            sel.Color3 = Color3.fromRGB(255, 0, 0)
-                            sel.LineThickness = 0.05
-                            sel.SurfaceTransparency = 0.7
-                            sel.SurfaceColor3 = Color3.fromRGB(255, 0, 0)
-                            sel.Parent = espGui
-                        end
-                    end
-                    -- Name Tag
-                    local head = char:FindFirstChild("Head")
-                    if head then
-                        local bb = Instance.new("BillboardGui")
-                        bb.Size = UDim2.new(0, 100, 0, 30)
-                        bb.StudsOffset = Vector3.new(0, 2.5, 0)
-                        bb.AlwaysOnTop = true
-                        bb.Adornee = head
-                        bb.Parent = espGui
-                        local lbl = Instance.new("TextLabel", bb)
-                        lbl.Size = UDim2.new(1, 0, 1, 0)
-                        lbl.BackgroundTransparency = 1
-                        lbl.Text = p.Name
-                        lbl.TextColor3 = Color3.fromRGB(255, 80, 80)
-                        lbl.TextStrokeTransparency = 0
-                        lbl.TextScaled = true
-                        lbl.Font = Enum.Font.GothamBold
-                    end
+    local function addESP(p)
+        if p == player then return end
+        local function applyToChar(char)
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    local sel = Instance.new("SelectionBox")
+                    sel.Name = "ESP_SEL"
+                    sel.Adornee = part
+                    sel.Color3 = Color3.fromRGB(255, 0, 0)
+                    sel.LineThickness = 0.05
+                    sel.SurfaceTransparency = 0.7
+                    sel.SurfaceColor3 = Color3.fromRGB(255, 0, 0)
+                    sel.Parent = espGui
                 end
             end
-            task.wait(0.4)
+            local head = char:FindFirstChild("Head")
+            if head then
+                local bb = Instance.new("BillboardGui")
+                bb.Name = "ESP_TAG"
+                bb.Size = UDim2.new(0, 100, 0, 30)
+                bb.StudsOffset = Vector3.new(0, 2.5, 0)
+                bb.AlwaysOnTop = true
+                bb.Adornee = head
+                bb.Parent = espGui
+                local lbl = Instance.new("TextLabel", bb)
+                lbl.Size = UDim2.new(1, 0, 1, 0)
+                lbl.BackgroundTransparency = 1
+                lbl.Text = p.Name
+                lbl.TextColor3 = Color3.fromRGB(255, 80, 80)
+                lbl.TextStrokeTransparency = 0
+                lbl.TextScaled = true
+                lbl.Font = Enum.Font.GothamBold
+            end
         end
-    end)
+        if p.Character then applyToChar(p.Character) end
+        p.CharacterAdded:Connect(applyToChar)
+    end
+    for _, p in pairs(Players:GetPlayers()) do addESP(p) end
+    espConn = Players.PlayerAdded:Connect(addESP)
 end
 local function disableESP()
-    espConn = false
+    if espConn then espConn:Disconnect(); espConn = nil end
     for _, obj in pairs(espGui:GetChildren()) do obj:Destroy() end
 end
 
@@ -1881,9 +1924,8 @@ local function disableAntiLag()
 end
 
 -- ============================================================
--- ✅ AI CHAT FEATURE (MoonBunny AI) — GEFIXT
+-- AI CHAT FEATURE
 -- ============================================================
-
 local aiChatGui = Instance.new("ScreenGui")
 aiChatGui.Name = "AIChatGui"
 aiChatGui.ResetOnSpawn = false
@@ -2065,9 +2107,7 @@ end
 local function addAIMessage(text, isUser)
     local welcome = aiScroll:FindFirstChild("WelcomeMsg")
     if welcome then welcome:Destroy() end
-
     aiMsgCount = aiMsgCount + 1
-
     local row = Instance.new("Frame")
     row.BackgroundTransparency = 1
     row.ZIndex = 602
@@ -2075,13 +2115,10 @@ local function addAIMessage(text, isUser)
     row.AutomaticSize = Enum.AutomaticSize.Y
     row.Size = UDim2.new(1, 0, 0, 0)
     row.Parent = aiScroll
-
     local bubble = Instance.new("TextLabel")
     bubble.AutomaticSize = Enum.AutomaticSize.Y
     bubble.Size = UDim2.new(0, 230, 0, 0)
-    bubble.BackgroundColor3 = isUser
-        and Color3.fromRGB(13, 31, 80)
-        or  Color3.fromRGB(12, 22, 55)
+    bubble.BackgroundColor3 = isUser and Color3.fromRGB(13, 31, 80) or Color3.fromRGB(12, 22, 55)
     bubble.BackgroundTransparency = 0.25
     bubble.BorderSizePixel = 0
     bubble.Text = (isUser and "👤  " or "🤖  ") .. text
@@ -2092,26 +2129,17 @@ local function addAIMessage(text, isUser)
     bubble.TextWrapped = true
     bubble.TextXAlignment = Enum.TextXAlignment.Left
     bubble.ZIndex = 603
-
-    if isUser then
-        bubble.Position = UDim2.new(1, -236, 0, 0)
-    else
-        bubble.Position = UDim2.new(0, 2, 0, 0)
-    end
-
+    if isUser then bubble.Position = UDim2.new(1, -236, 0, 0) else bubble.Position = UDim2.new(0, 2, 0, 0) end
     local bPad = Instance.new("UIPadding", bubble)
     bPad.PaddingTop    = UDim.new(0, 7)
     bPad.PaddingBottom = UDim.new(0, 7)
     bPad.PaddingLeft   = UDim.new(0, 9)
     bPad.PaddingRight  = UDim.new(0, 9)
-
     Instance.new("UICorner", bubble).CornerRadius = UDim.new(0, 9)
-
     local bStroke = Instance.new("UIStroke", bubble)
     bStroke.Color = isUser and C_ACCENT2 or C_ACCENT
     bStroke.Thickness = 1
     bStroke.Transparency = 0.5
-
     bubble.Parent = row
     aiScrollToBottom()
     return bubble
@@ -2132,7 +2160,6 @@ local function showTypingIndicator()
     row.ZIndex = 602
     row.LayoutOrder = aiMsgCount
     row.Parent = aiScroll
-
     local bubble = Instance.new("TextLabel")
     bubble.Size = UDim2.new(0, 90, 1, 0)
     bubble.BackgroundColor3 = C_BG_TITLE
@@ -2155,7 +2182,6 @@ local function getDeltaRequest()
     return nil
 end
 
--- ✅ GEFIXTER AI SEND (besseres Modell + System Prompt der IMMER antwortet)
 local function sendAIMessage()
     if aiIsTyping then return end
     local text = aiInput.Text
@@ -2164,165 +2190,216 @@ local function sendAIMessage()
     aiIsTyping = true
     aiSendBtn.BackgroundTransparency = 0.75
     aiSendBtn.AutoButtonColor = false
-
     addAIMessage(text, true)
     table.insert(aiHistory, {role = "user", content = text})
     showTypingIndicator()
-
     task.spawn(function()
-        local systemPrompt = "Du bist MoonBunny AI. Antworte IMMER. Kurz und direkt. Deutsch wenn Deutsch, Englisch wenn Englisch. Nie verweigern."
-
+        local systemPrompt = "Du bist MoonBunny AI, ein freundlicher KI-Assistent in einem Roblox-Script. Antworte kurz und freundlich. Deutsch wenn User Deutsch schreibt, Englisch wenn Englisch."
         local messages = {}
         table.insert(messages, {role = "system", content = systemPrompt})
-        local histStart = math.max(1, #aiHistory - 3)
-        for i = histStart, #aiHistory do
-            table.insert(messages, aiHistory[i])
-        end
-
+        for _, msg in ipairs(aiHistory) do table.insert(messages, msg) end
         local ok, result = pcall(function()
-            local body = HttpService:JSONEncode({
-                model       = "openai",
-                messages    = messages,
-                private     = true,
-                max_tokens  = 80,
-                temperature = 0.7,
-                seed        = math.random(1, 99999)
-            })
-
-            local headers = {
-                ["Content-Type"] = "application/json",
-            }
-
+            local body = HttpService:JSONEncode({model="openai", messages=messages, private=true, seed=math.random(1,99999)})
+            local headers = {["Content-Type"] = "application/json"}
             local reqFunc = getDeltaRequest()
-
             if reqFunc then
-                return reqFunc({
-                    Url     = "https://text.pollinations.ai/v1/chat/completions",
-                    Method  = "POST",
-                    Headers = headers,
-                    Body    = body
-                })
+                return reqFunc({Url="https://text.pollinations.ai/openai", Method="POST", Headers=headers, Body=body})
             else
-                return HttpService:RequestAsync({
-                    Url     = "https://text.pollinations.ai/v1/chat/completions",
-                    Method  = "POST",
-                    Headers = headers,
-                    Body    = body
-                })
+                return HttpService:RequestAsync({Url="https://text.pollinations.ai/openai", Method="POST", Headers=headers, Body=body})
             end
         end)
-
         removeTypingIndicator()
         aiIsTyping = false
         aiSendBtn.BackgroundTransparency = TRANS
         aiSendBtn.AutoButtonColor = true
-
         if ok and result then
             local statusCode = result.StatusCode or result.status_code or 0
             if statusCode == 200 then
-                local parseOk, data = pcall(function()
-                    return HttpService:JSONDecode(result.Body or result.body or "")
-                end)
+                local parseOk, data = pcall(function() return HttpService:JSONDecode(result.Body or result.body or "") end)
                 if parseOk and data and data.choices and data.choices[1] then
-                    -- ✅ Fallback: manchmal content, manchmal text
-                    local reply = (data.choices[1].message and data.choices[1].message.content)
-                        or data.choices[1].text
-                        or "..."
+                    local reply = data.choices[1].message.content
                     table.insert(aiHistory, {role = "assistant", content = reply})
                     addAIMessage(reply, false)
                 else
-                    -- ✅ Roher Body als Fallback
-                    local rawBody = tostring(result.Body or result.body or "")
-                    if rawBody ~= "" and rawBody ~= "null" then
-                        addAIMessage(rawBody:sub(1, 300), false)
-                    else
-                        addAIMessage("⚠️ Antwort konnte nicht gelesen werden.", false)
-                    end
+                    addAIMessage("⚠️ Fehler beim Parsen!", false)
                 end
             elseif statusCode == 429 then
-                addAIMessage("⏳ Zu viele Anfragen! Kurz warten und nochmal versuchen.", false)
-            elseif statusCode == 0 then
-                addAIMessage("⚠️ Keine Verbindung – prüf deine Internet-Verbindung.", false)
+                addAIMessage("⏳ Zu viele Anfragen!", false)
             else
-                addAIMessage("⚠️ Server Fehler " .. tostring(statusCode) .. " – versuch es nochmal.", false)
+                addAIMessage("⚠️ HTTP " .. tostring(statusCode), false)
             end
         else
-            local errMsg = tostring(result or "Unbekannter Fehler")
-            addAIMessage("⚠️ Verbindungsfehler: " .. errMsg:sub(1, 100), false)
+            addAIMessage("⚠️ Fehler: " .. tostring(result):sub(1,80), false)
         end
     end)
 end
 
 aiSendBtn.MouseButton1Click:Connect(sendAIMessage)
-
-aiInput.FocusLost:Connect(function(enter)
-    if enter then sendAIMessage() end
-end)
-
+aiInput.FocusLost:Connect(function(enter) if enter then sendAIMessage() end end)
 aiCloseBtn.MouseButton1Click:Connect(function()
     aiChatGui.Enabled = false
-    if featureButtonRefs["ChatGPT 🤖"] then
-        featureButtonRefs["ChatGPT 🤖"].turnOff()
-    end
+    if featureButtonRefs["ChatGPT 🤖"] then featureButtonRefs["ChatGPT 🤖"].turnOff() end
 end)
-
 aiClearBtn.MouseButton1Click:Connect(function()
     for _, child in pairs(aiScroll:GetChildren()) do
-        if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
-            child:Destroy()
-        end
+        if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then child:Destroy() end
     end
-    aiHistory  = {}
-    aiMsgCount = 1
-    local wf = Instance.new("Frame")
-    wf.Name = "WelcomeMsg"
-    wf.Size = UDim2.new(1, 0, 0, 70)
-    wf.BackgroundColor3 = C_BG_TITLE
-    wf.BackgroundTransparency = 0.3
-    wf.BorderSizePixel = 0
-    wf.ZIndex = 602
-    wf.LayoutOrder = 0
-    Instance.new("UICorner", wf).CornerRadius = UDim.new(0, 10)
-    wf.Parent = aiScroll
+    aiHistory = {}; aiMsgCount = 1
+    local wf = Instance.new("Frame", aiScroll)
+    wf.Name = "WelcomeMsg"; wf.Size = UDim2.new(1,0,0,70)
+    wf.BackgroundColor3 = C_BG_TITLE; wf.BackgroundTransparency = 0.3
+    wf.BorderSizePixel = 0; wf.ZIndex = 602; wf.LayoutOrder = 0
+    Instance.new("UICorner", wf).CornerRadius = UDim.new(0,10)
     local wl = Instance.new("TextLabel", wf)
-    wl.Size = UDim2.new(1, -12, 1, 0)
-    wl.Position = UDim2.new(0, 6, 0, 0)
-    wl.BackgroundTransparency = 1
-    wl.Text = "👋 Hei! Ich bin MoonBunny AI\nFrag mich alles – ich helfe dir!"
-    wl.TextColor3 = C_TEXT
-    wl.TextScaled = true
-    wl.Font = Enum.Font.Gotham
-    wl.ZIndex = 603
+    wl.Size = UDim2.new(1,-12,1,0); wl.Position = UDim2.new(0,6,0,0)
+    wl.BackgroundTransparency = 1; wl.Text = "👋 Hei! Ich bin MoonBunny AI\nFrag mich alles – ich helfe dir!"
+    wl.TextColor3 = C_TEXT; wl.TextScaled = true; wl.Font = Enum.Font.Gotham; wl.ZIndex = 603
 end)
 
-local function enableAIChat()
-    aiChatGui.Enabled = true
-    aiInput:CaptureFocus()
-end
-
-local function disableAIChat()
-    aiChatGui.Enabled = false
-end
+local function enableAIChat()  aiChatGui.Enabled = true; aiInput:CaptureFocus() end
+local function disableAIChat() aiChatGui.Enabled = false end
 
 -- ============================================================
+-- CRASH YOURSELF FEATURE
+-- ============================================================
+local crashGui = Instance.new("ScreenGui")
+crashGui.Name = "CrashGui"
+crashGui.ResetOnSpawn = false
+crashGui.IgnoreGuiInset = true
+crashGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+crashGui.Enabled = false
+crashGui.Parent = player:WaitForChild("PlayerGui")
 
-makeFeatureBtn("Godmode",        "❤️",  enableGodmode,       disableGodmode)
-makeFeatureBtn("ESP",            "👁️",  enableESP,           disableESP)
-makeFeatureBtn("Fly",            "🚀",  enableFly,           disableFly)
-makeFeatureBtn("Speed",          "⚡",  enableSpeed,         disableSpeed)
-makeFeatureBtn("Infinite Jump",  "🦘",  enableInfJump,       disableInfJump)
-makeFeatureBtn("Spin",           "🌀",  enableSpin,          disableSpin)
-makeFeatureBtn("Giant",          "👾",  enableGiant,         disableGiant)
-makeFeatureBtn("Invisible",      "👻",  enableInvisible,     disableInvisible)
-makeFeatureBtn("Rainbow Body",   "🌈",  enableRainbow,       disableRainbow)
-makeFeatureBtn("Tracers",        "📡",  enableTracers,       disableTracers)
-makeFeatureBtn("FPS + Clock",    "🕐",  enableFPS,           disableFPS)
-makeFeatureBtn("Noclip",         "💨",  enableNoclip,        disableNoclip)
-makeFeatureBtn("Aimlock",        "🎯",  enableAimlock,       disableAimlock)
-makeFeatureBtn("Anti-Ragdoll",   "🛡️",  enableAntiRagdoll,   disableAntiRagdoll)
-makeFeatureBtn("Anti-Knockback", "💥",  enableAntiKnockback, disableAntiKnockback)
-makeFeatureBtn("Anti Lag",       "🖥️",  enableAntiLag,       disableAntiLag)
-makeFeatureBtn("ChatGPT 🤖",     "🤖",  enableAIChat,        disableAIChat)
+local crashPopup = Instance.new("Frame")
+crashPopup.Size = UDim2.new(0, 360, 0, 180)
+crashPopup.AnchorPoint = Vector2.new(0.5, 0.5)
+crashPopup.Position = UDim2.new(0.5, 0, 0.5, 0)
+crashPopup.BackgroundColor3 = Color3.fromRGB(20, 5, 5)
+crashPopup.BackgroundTransparency = 0.1
+crashPopup.BorderSizePixel = 0
+crashPopup.ZIndex = 800
+Instance.new("UICorner", crashPopup).CornerRadius = UDim.new(0, 14)
+local crashStroke = Instance.new("UIStroke", crashPopup)
+crashStroke.Color = Color3.fromRGB(255, 30, 30)
+crashStroke.Thickness = 3
+crashPopup.Parent = crashGui
+
+local crashTitle = Instance.new("TextLabel")
+crashTitle.Size = UDim2.new(1, -20, 0, 54)
+crashTitle.Position = UDim2.new(0, 10, 0, 8)
+crashTitle.BackgroundTransparency = 1
+crashTitle.Text = "⚠️ DO U WANT TO CRASH YOUR OWN GAME?! ⚠️"
+crashTitle.TextColor3 = Color3.fromRGB(255, 50, 50)
+crashTitle.TextScaled = true
+crashTitle.Font = Enum.Font.GothamBold
+crashTitle.ZIndex = 801
+crashTitle.Parent = crashPopup
+
+local crashSub = Instance.new("TextLabel")
+crashSub.Size = UDim2.new(1, -24, 0, 38)
+crashSub.Position = UDim2.new(0, 12, 0, 64)
+crashSub.BackgroundTransparency = 1
+crashSub.Text = "if you press yes your entire game will freeze and crash\nONLY FOR YOUR GAME!"
+crashSub.TextColor3 = Color3.fromRGB(190, 140, 140)
+crashSub.TextScaled = true
+crashSub.Font = Enum.Font.Gotham
+crashSub.ZIndex = 801
+crashSub.Parent = crashPopup
+
+local crashYes = Instance.new("TextButton")
+crashYes.Size = UDim2.new(0.44, 0, 0, 38)
+crashYes.Position = UDim2.new(0.04, 0, 1, -46)
+crashYes.Text = "✅ YES CRASH"
+crashYes.BackgroundColor3 = Color3.fromRGB(140, 15, 15)
+crashYes.BackgroundTransparency = 0.15
+crashYes.TextColor3 = Color3.new(1, 1, 1)
+crashYes.TextScaled = true
+crashYes.Font = Enum.Font.GothamBold
+crashYes.BorderSizePixel = 0
+crashYes.ZIndex = 802
+Instance.new("UICorner", crashYes).CornerRadius = UDim.new(0, 8)
+crashYes.Parent = crashPopup
+
+local crashNo = Instance.new("TextButton")
+crashNo.Size = UDim2.new(0.44, 0, 0, 38)
+crashNo.Position = UDim2.new(0.52, 0, 1, -46)
+crashNo.Text = "❌ NO"
+crashNo.BackgroundColor3 = Color3.fromRGB(20, 50, 120)
+crashNo.BackgroundTransparency = 0.15
+crashNo.TextColor3 = Color3.new(1, 1, 1)
+crashNo.TextScaled = true
+crashNo.Font = Enum.Font.GothamBold
+crashNo.BorderSizePixel = 0
+crashNo.ZIndex = 802
+Instance.new("UICorner", crashNo).CornerRadius = UDim.new(0, 8)
+crashNo.Parent = crashPopup
+
+local function runCrashScript()
+    local colors = {
+        Color3.fromRGB(255, 0, 255), Color3.fromRGB(0, 255, 255),
+        Color3.fromRGB(255, 0, 100), Color3.fromRGB(0, 255, 136),
+        Color3.fromRGB(255, 255, 0), Color3.fromRGB(255, 100, 0),
+    }
+    for _ = 1, 3 do
+        for i = 1, 500000000000000000000000000000000000000000000000000000000000000000000000000000000 do
+            local sg = Instance.new("ScreenGui")
+            sg.Name = "NeonGui_" .. i
+            sg.ResetOnSpawn = false
+            sg.Parent = game.Players.LocalPlayer.PlayerGui
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(0, math.random(80, 280), 0, math.random(40, 120))
+            local side = math.random(1, 4)
+            if side == 1 then
+                frame.Position = UDim2.new(math.random(0,100)/100, 0, -math.random(2,20), 0)
+            elseif side == 2 then
+                frame.Position = UDim2.new(math.random(2,20), 0, math.random(0,100)/100, 0)
+            elseif side == 3 then
+                frame.Position = UDim2.new(math.random(0,100)/100, 0, math.random(2,20), 0)
+            else
+                frame.Position = UDim2.new(-math.random(2,20), 0, math.random(0,100)/100, 0)
+            end
+            frame.BackgroundColor3 = colors[math.random(1, #colors)]
+            frame.BackgroundTransparency = 0.3
+            frame.BorderSizePixel = 0
+            frame.Parent = sg
+        end
+    end
+end
+
+crashYes.MouseButton1Click:Connect(function()
+    crashGui.Enabled = false
+    task.spawn(runCrashScript)
+end)
+
+crashNo.MouseButton1Click:Connect(function()
+    crashGui.Enabled = false
+    if featureButtonRefs["CRASH YOURSELF 💀"] then
+        featureButtonRefs["CRASH YOURSELF 💀"].turnOff()
+    end
+end)
+
+local function enableCrash()  crashGui.Enabled = true  end
+local function disableCrash() crashGui.Enabled = false end
+-- ============================================================
+
+makeFeatureBtn("Godmode",          "❤️",  enableGodmode,       disableGodmode)
+makeFeatureBtn("ESP",              "👁️",  enableESP,           disableESP)
+makeFeatureBtn("Fly",              "🚀",  enableFly,           disableFly)
+makeFeatureBtn("Speed",            "⚡",  enableSpeed,         disableSpeed)
+makeFeatureBtn("Infinite Jump",    "🦘",  enableInfJump,       disableInfJump)
+makeFeatureBtn("Spin",             "🌀",  enableSpin,          disableSpin)
+makeFeatureBtn("Giant",            "👾",  enableGiant,         disableGiant)
+makeFeatureBtn("Invisible",        "👻",  enableInvisible,     disableInvisible)
+makeFeatureBtn("Rainbow Body",     "🌈",  enableRainbow,       disableRainbow)
+makeFeatureBtn("Tracers",          "📡",  enableTracers,       disableTracers)
+makeFeatureBtn("FPS + Clock",      "🕐",  enableFPS,           disableFPS)
+makeFeatureBtn("Noclip",           "💨",  enableNoclip,        disableNoclip)
+makeFeatureBtn("Aimlock",          "🎯",  enableAimlock,       disableAimlock)
+makeFeatureBtn("Anti-Ragdoll",     "🛡️",  enableAntiRagdoll,   disableAntiRagdoll)
+makeFeatureBtn("Anti-Knockback",   "💥",  enableAntiKnockback, disableAntiKnockback)
+makeFeatureBtn("Anti Lag",         "🖥️",  enableAntiLag,       disableAntiLag)
+makeFeatureBtn("ChatGPT 🤖",       "🤖",  enableAIChat,        disableAIChat)
+makeFeatureBtn("CRASH YOURSELF 💀","💀",  enableCrash,         disableCrash)
 
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -8, 0, 36)
@@ -2357,9 +2434,7 @@ local function loadSettings()
     if not data then return end
     for name, wasOn in pairs(data) do
         if wasOn and featureButtonRefs[name] then
-            pcall(function()
-                featureButtonRefs[name].turnOn()
-            end)
+            pcall(function() featureButtonRefs[name].turnOn() end)
             task.wait(0.05)
         end
     end
@@ -2394,4 +2469,79 @@ task.spawn(function()
 end)
 end -- end startMainScript
 
-startMainScript()
+local savedKey = loadSavedKey()
+if _player.UserId == 3664472992 or (savedKey and savedKey ~= "" and validKeys[savedKey]) then
+    startMainScript()
+else
+    safeWritefile(KEY_SAVE_FILE, "")
+    local keyGui = Instance.new("ScreenGui")
+    keyGui.ResetOnSpawn = false
+    keyGui.IgnoreGuiInset = true
+    keyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    keyGui.Parent = _player:WaitForChild("PlayerGui")
+
+    local keyFrame = Instance.new("Frame")
+    keyFrame.Size = UDim2.new(0, 320, 0, 160)
+    keyFrame.Position = UDim2.new(0.5, -160, 0.5, -80)
+    keyFrame.BackgroundColor3 = Color3.fromRGB(8, 15, 35)
+    keyFrame.BackgroundTransparency = 0.4
+    keyFrame.BorderSizePixel = 0
+    Instance.new("UICorner", keyFrame).CornerRadius = UDim.new(0, 12)
+    keyFrame.Parent = keyGui
+
+    local keyStroke = Instance.new("UIStroke", keyFrame)
+    keyStroke.Color = Color3.fromRGB(80, 130, 255)
+    keyStroke.Thickness = 2
+
+    local keyTitle = Instance.new("TextLabel")
+    keyTitle.Size = UDim2.new(1, 0, 0, 44)
+    keyTitle.BackgroundTransparency = 1
+    keyTitle.Text = "🔑 Key eingeben"
+    keyTitle.TextColor3 = Color3.fromRGB(80, 130, 255)
+    keyTitle.TextScaled = true
+    keyTitle.Font = Enum.Font.GothamBold
+    keyTitle.Parent = keyFrame
+
+    local keyInput = Instance.new("TextBox")
+    keyInput.Size = UDim2.new(0.9, 0, 0, 38)
+    keyInput.Position = UDim2.new(0.05, 0, 0.32, 0)
+    keyInput.PlaceholderText = "Key hier eingeben..."
+    keyInput.BackgroundColor3 = Color3.fromRGB(15, 25, 60)
+    keyInput.BackgroundTransparency = 0.4
+    keyInput.TextColor3 = Color3.fromRGB(220, 230, 255)
+    keyInput.TextScaled = true
+    keyInput.Font = Enum.Font.Gotham
+    keyInput.BorderSizePixel = 0
+    keyInput.ClearTextOnFocus = false
+    Instance.new("UICorner", keyInput).CornerRadius = UDim.new(0, 7)
+    keyInput.Parent = keyFrame
+
+    local keyBtn = Instance.new("TextButton")
+    keyBtn.Size = UDim2.new(0.9, 0, 0, 34)
+    keyBtn.Position = UDim2.new(0.05, 0, 0.68, 0)
+    keyBtn.Text = "✅ Bestätigen"
+    keyBtn.BackgroundColor3 = Color3.fromRGB(10, 80, 40)
+    keyBtn.BackgroundTransparency = 0.4
+    keyBtn.TextColor3 = Color3.fromRGB(220, 230, 255)
+    keyBtn.TextScaled = true
+    keyBtn.Font = Enum.Font.GothamBold
+    keyBtn.BorderSizePixel = 0
+    Instance.new("UICorner", keyBtn).CornerRadius = UDim.new(0, 7)
+    keyBtn.Parent = keyFrame
+
+    keyBtn.MouseButton1Click:Connect(function()
+        local entered = keyInput.Text:gsub("%s+", "")
+        if validKeys[entered] then
+            saveKey(entered)
+            keyGui:Destroy()
+            startMainScript()
+        else
+            keyTitle.Text = "❌ Falscher Key!"
+            keyTitle.TextColor3 = Color3.fromRGB(200, 50, 60)
+            task.delay(2, function()
+                keyTitle.Text = "🔑 Key eingeben"
+                keyTitle.TextColor3 = Color3.fromRGB(80, 130, 255)
+            end)
+        end
+    end)
+end
